@@ -46,16 +46,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var lastTime: TimeInterval = 0
     var lastDeltaX: CGFloat = 0
     var lastDeltaY: CGFloat = 0
+    // Must be retained — if this is released, the monitor silently stops firing
+    var eventMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Remove any activeApps entries whose bundle ID is no longer registered
-        for key in AppState.shared.activeApps.keys {
-            if AppState.shared.registeredApps[key] == nil {
-                AppState.shared.activeApps.removeValue(forKey: key)
-            }
+        // Collect stale keys first, then remove — never mutate while iterating
+        let staleKeys = AppState.shared.activeApps.keys.filter {
+            AppState.shared.registeredApps[$0] == nil
         }
+        staleKeys.forEach { AppState.shared.activeApps.removeValue(forKey: $0) }
 
-        NSEvent.addGlobalMonitorForEvents(
+        eventMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged]
         ) { [weak self] event in
             guard let self = self else { return }

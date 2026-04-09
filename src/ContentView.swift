@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject var appState: AppState
+    @ObservedObject var appState: AppState
     @State private var newBundleID: String = ""
     @State private var newAppName: String = ""
     @State private var widthError: String? = nil
