@@ -91,6 +91,21 @@ When any configured app launches, containment enables. When all configured apps 
 
 ---
 
+## Future Maintenance Notes
+
+These are the most likely failure points if the app stops working after a macOS update.
+
+**`CGWarpMouseCursorPosition` may eventually require Accessibility permission** *(highest risk)*
+The app uses `CGWarpMouseCursorPosition` to snap the cursor back in bounds. As of macOS 15 this requires no special permission, but Apple has been progressively locking down low-level input APIs. If a future macOS version gates cursor warping behind Accessibility (or a new dedicated permission), the app will silently stop containing the cursor with no error or dialog — `CGWarpMouseCursorPosition` returns void. If containment stops working after an OS update, check System Settings → Privacy & Security → Accessibility first and grant access if the app appears there.
+
+**Gatekeeper hardening may change the install steps** *(medium risk)*
+The `xattr -cr` quarantine removal step is a supported but increasingly begrudging exception for unsigned binaries. Apple tightens this with each major release, particularly on Apple Silicon. If the install instructions stop working, check Apple's current guidance for running ad-hoc signed apps — the flags or workflow may have changed. Notarization with a Developer ID certificate would eliminate this fragility permanently.
+
+**`NSScreen.main` coordinate assumptions** *(low risk)*
+The containment math assumes `NSScreen.main` represents the primary display with a stable, single-origin coordinate system. This has held since the original Mac. Increasing investment in Stage Manager, virtual displays, and Sidecar introduces more complexity around what "main screen" means. If the cursor is being clamped to the wrong region after an OS update, look at the coordinate math in `setupContainmentTimer()` in `CursorContainmentFieldApp.swift`.
+
+---
+
 ## Project Structure
 
 ```
