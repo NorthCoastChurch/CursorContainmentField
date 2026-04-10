@@ -1,16 +1,14 @@
 import SwiftUI
+import Combine
 
 @main
 struct CursorContainmentFieldApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @StateObject var appState = AppState.shared
 
     var body: some Scene {
-        MenuBarExtra {
-            MenuBarView(appState: appState)
-        } label: {
-            Image(systemName: appState.isActive ? "lock.rectangle.fill" : "lock.open.rectangle.fill")
-        }
+        // All UI is handled by AppDelegate via NSStatusItem —
+        // MenuBarExtra had compatibility issues on macOS 26 beta
+        Settings { EmptyView() }
     }
 }
 
@@ -25,17 +23,90 @@ class AppState: ObservableObject {
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
+    // MARK: – Status bar
+    var statusItem: NSStatusItem?
+    var cancellable: AnyCancellable?
+
+    // MARK: – Cursor containment
     var lastTime: TimeInterval = 0
     var lastDeltaX: CGFloat = 0
     var lastDeltaY: CGFloat = 0
-    // Must be retained — if released, the monitor silently stops firing
     var eventMonitor: Any?
-    // True while any NSMenu (including our MenuBarExtra) is being tracked.
-    // CGWarpMouseCursorPosition conflicts with menu event loops and causes
-    // erratic cursor behavior, so we pause containment during tracking.
     var isMenuTracking = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        setupStatusBar()
+        setupMenuTracking()
+        setupEventMonitor()
+    }
+
+    // MARK: – Status bar setup
+
+    private func setupStatusBar() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        updateStatusIcon()
+
+        // Rebuild the menu each time isActive changes
+        cancellable = AppState.shared.$isActive.sink { [weak self] _ in
+            self?.updateStatusIcon()
+            self?.rebuildMenu()
+        }
+
+        rebuildMenu()
+    }
+
+    private func updateStatusIcon() {
+        let name = AppState.shared.isActive
+            ? "lock.rectangle.fill"
+            : "lock.open.rectangle.fill"
+        statusItem?.button?.image = NSImage(
+            systemSymbolName: name,
+            accessibilityDescription: "CursorContainmentField"
+        )
+    }
+
+    private func rebuildMenu() {
+        let menu = NSMenu()
+
+        let statusTitle = AppState.shared.isActive ? "Containment: On" : "Containment: Off"
+        let statusItem = NSMenuItem(title: statusTitle, action: nil, keyEquivalent: "")
+        statusItem.isEnabled = false
+        menu.addItem(statusItem)
+
+        menu.addItem(.separator())
+
+        let toggleTitle = AppState.shared.isActive ? "Disable Containment" : "Enable Containment"
+        menu.addItem(NSMenuItem(
+            title: toggleTitle,
+            action: #selector(toggleContainment),
+            keyEquivalent: ""
+        ))
+
+        menu.addItem(.separator())
+
+        menu.addItem(NSMenuItem(
+            title: "Quit CursorContainmentField",
+            action: #selector(quitApp),
+            keyEquivalent: "q"
+        ))
+
+        // Set target on items that need it
+        for item in menu.items { item.target = self }
+
+        self.statusItem?.menu = menu
+    }
+
+    @objc private func toggleContainment() {
+        AppState.shared.isActive.toggle()
+    }
+
+    @objc private func quitApp() {
+        NSApplication.shared.terminate(nil)
+    }
+
+    // MARK: – Menu tracking (pause containment while menu is open)
+
+    private func setupMenuTracking() {
         NotificationCenter.default.addObserver(
             forName: NSMenu.didBeginTrackingNotification,
             object: nil,
@@ -52,7 +123,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.isMenuTracking = false
             self?.resetDeltas()
         }
+    }
 
+    // MARK: – Event monitor
+
+    private func setupEventMonitor() {
         eventMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged]
         ) { [weak self] event in
@@ -73,14 +148,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let deltaY = event.deltaY - self.lastDeltaY
             let pos = event.locationInWindow.flipped(in: screen)
 
-            // Clamp to full screen bounds with a 1-point inset so the cursor
-            // never escapes, using the live screen frame (handles resolution changes)
+            // Clamp to full screen bounds with a 1-point inset
             let bounds = screen.frame
             let xPoint = clamp(pos.x + deltaX, minValue: bounds.minX + 1, maxValue: bounds.maxX - 1)
             let yPoint = clamp(pos.y + deltaY, minValue: bounds.minY + 1, maxValue: bounds.maxY - 1)
 
-            // Reset accumulated delta when the cursor hits a wall so there's no
-            // built-up "spring" force making edges feel sticky on the next move
+            // Reset accumulated delta when the cursor hits a wall so edges don't feel sticky
             self.lastDeltaX = (xPoint == pos.x + deltaX) ? xPoint - pos.x : 0
             self.lastDeltaY = (yPoint == pos.y + deltaY) ? yPoint - pos.y : 0
 
@@ -101,7 +174,6 @@ public func clamp<T: Comparable>(_ value: T, minValue: T, maxValue: T) -> T {
 }
 
 extension NSPoint {
-    // Takes an explicit screen to avoid force-unwrapping NSScreen.main
     func flipped(in screen: NSScreen) -> NSPoint {
         let y = screen.frame.size.height - self.y
         return NSPoint(x: self.x, y: y)
