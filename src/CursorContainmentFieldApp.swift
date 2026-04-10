@@ -30,18 +30,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var lastDeltaY: CGFloat = 0
     // Must be retained — if released, the monitor silently stops firing
     var eventMonitor: Any?
+    // True while any NSMenu (including our MenuBarExtra) is being tracked.
+    // CGWarpMouseCursorPosition conflicts with menu event loops and causes
+    // erratic cursor behavior, so we pause containment during tracking.
+    var isMenuTracking = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NotificationCenter.default.addObserver(
+            forName: NSMenu.didBeginTrackingNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.isMenuTracking = true
+            self?.resetDeltas()
+        }
+        NotificationCenter.default.addObserver(
+            forName: NSMenu.didEndTrackingNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.isMenuTracking = false
+            self?.resetDeltas()
+        }
+
         eventMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.mouseMoved, .leftMouseDragged, .rightMouseDragged]
         ) { [weak self] event in
             guard let self = self else { return }
             guard AppState.shared.isActive else { return }
+            guard !self.isMenuTracking else { return }
 
             // Discard stale/replayed events
             if self.lastTime != 0, event.timestamp <= self.lastTime {
-                self.lastDeltaX = 0
-                self.lastDeltaY = 0
+                self.resetDeltas()
                 return
             }
 
@@ -58,12 +79,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let xPoint = clamp(pos.x + deltaX, minValue: bounds.minX + 1, maxValue: bounds.maxX - 1)
             let yPoint = clamp(pos.y + deltaY, minValue: bounds.minY + 1, maxValue: bounds.maxY - 1)
 
-            self.lastDeltaX = xPoint - pos.x
-            self.lastDeltaY = yPoint - pos.y
+            // Reset accumulated delta when the cursor hits a wall so there's no
+            // built-up "spring" force making edges feel sticky on the next move
+            self.lastDeltaX = (xPoint == pos.x + deltaX) ? xPoint - pos.x : 0
+            self.lastDeltaY = (yPoint == pos.y + deltaY) ? yPoint - pos.y : 0
 
             CGWarpMouseCursorPosition(CGPoint(x: xPoint, y: yPoint))
             self.lastTime = ProcessInfo.processInfo.systemUptime
         }
+    }
+
+    private func resetDeltas() {
+        lastDeltaX = 0
+        lastDeltaY = 0
+        lastTime = 0
     }
 }
 
