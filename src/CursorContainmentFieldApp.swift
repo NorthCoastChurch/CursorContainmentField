@@ -25,9 +25,6 @@ class AppState: ObservableObject {
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
-    var lastTime: TimeInterval = 0
-    var lastDeltaX: CGFloat = 0
-    var lastDeltaY: CGFloat = 0
     var eventMonitor: Any?
     var isMenuTracking = false
 
@@ -41,18 +38,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             forName: NSMenu.didBeginTrackingNotification,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
-            self?.isMenuTracking = true
-            self?.resetDeltas()
-        }
+        ) { [weak self] _ in self?.isMenuTracking = true }
+
         NotificationCenter.default.addObserver(
             forName: NSMenu.didEndTrackingNotification,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
-            self?.isMenuTracking = false
-            self?.resetDeltas()
-        }
+        ) { [weak self] _ in self?.isMenuTracking = false }
     }
 
     private func setupEventMonitor() {
@@ -62,43 +54,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self = self else { return }
             guard AppState.shared.isActive else { return }
             guard !self.isMenuTracking else { return }
-
-            if self.lastTime != 0, event.timestamp <= self.lastTime {
-                self.resetDeltas()
-                return
-            }
-
             guard let screen = NSScreen.main else { return }
 
-            let deltaX = event.deltaX - self.lastDeltaX
-            let deltaY = event.deltaY - self.lastDeltaY
+            // Current cursor position in CG coordinates (top-left origin)
             let pos = event.locationInWindow.flipped(in: screen)
 
-            // Leave the menu bar area completely free so the cursor reaches
-            // the icon without resistance. menuBarHeight is derived from the
-            // live screen geometry — correct on all display sizes and notch Macs.
+            // Leave the menu bar area free so the icon is reachable
             let menuBarHeight = screen.frame.maxY - screen.visibleFrame.maxY
-            if pos.y <= menuBarHeight {
-                self.resetDeltas()
-                return
-            }
+            guard pos.y > menuBarHeight else { return }
 
+            // Clamp to screen bounds — only warp if the cursor is actually outside
             let bounds = screen.frame
-            let xPoint = clamp(pos.x + deltaX, minValue: bounds.minX + 1, maxValue: bounds.maxX - 1)
-            let yPoint = clamp(pos.y + deltaY, minValue: menuBarHeight + 1, maxValue: bounds.maxY - 1)
+            let clampedX = clamp(pos.x, minValue: bounds.minX + 1, maxValue: bounds.maxX - 1)
+            let clampedY = clamp(pos.y, minValue: menuBarHeight + 1, maxValue: bounds.maxY - 1)
 
-            self.lastDeltaX = (xPoint == pos.x + deltaX) ? xPoint - pos.x : 0
-            self.lastDeltaY = (yPoint == pos.y + deltaY) ? yPoint - pos.y : 0
-
-            CGWarpMouseCursorPosition(CGPoint(x: xPoint, y: yPoint))
-            self.lastTime = ProcessInfo.processInfo.systemUptime
+            if clampedX != pos.x || clampedY != pos.y {
+                CGWarpMouseCursorPosition(CGPoint(x: clampedX, y: clampedY))
+            }
         }
-    }
-
-    private func resetDeltas() {
-        lastDeltaX = 0
-        lastDeltaY = 0
-        lastTime = 0
     }
 }
 
