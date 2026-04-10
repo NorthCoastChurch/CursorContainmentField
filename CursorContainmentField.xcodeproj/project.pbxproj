@@ -8,12 +8,14 @@
 
 /* Begin PBXBuildFile section */
 		0E577D8927BD9D5F002B61CC /* CursorContainmentFieldApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E577D8827BD9D5F002B61CC /* CursorContainmentFieldApp.swift */; };
+		CC0002BB33445500CCDD2233 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0002BB33445500CCDD2234 /* main.swift */; };
 		0E96FDD12917F00500D67A09 /* Media.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0E96FDD02917F00500D67A09 /* Media.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		0E577D8527BD9D5F002B61CC /* CursorContainmentField.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CursorContainmentField.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0E577D8827BD9D5F002B61CC /* CursorContainmentFieldApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorContainmentFieldApp.swift; sourceTree = "<group>"; };
+		CC0002BB33445500CCDD2234 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		0E96FDD02917F00500D67A09 /* Media.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Media.xcassets; sourceTree = "<group>"; };
 		CC0001AA22334400BBCC1122 /* CursorContainmentField.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CursorContainmentField.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -49,6 +51,7 @@
 			isa = PBXGroup;
 			children = (
 				0E577D8827BD9D5F002B61CC /* CursorContainmentFieldApp.swift */,
+				CC0002BB33445500CCDD2234 /* main.swift */,
 					0E96FDD02917F00500D67A09 /* Media.xcassets */,
 				CC0001AA22334400BBCC1122 /* CursorContainmentField.entitlements */,
 			);
@@ -126,6 +129,7 @@
 			buildActionMask = 2147483647;
 			files = (
 					0E577D8927BD9D5F002B61CC /* CursorContainmentFieldApp.swift in Sources */,
+				CC0002BB33445500CCDD2233 /* main.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

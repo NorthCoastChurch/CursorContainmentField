@@ -1,31 +1,25 @@
-import SwiftUI
+import AppKit
 import Combine
 
-@main
-struct CursorContainmentFieldApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+class AppState {
+    static let shared = AppState()
 
-    var body: some Scene {
-        // All UI is handled by AppDelegate via NSStatusItem —
-        // MenuBarExtra had compatibility issues on macOS 26 beta
-        Settings { EmptyView() }
+    var isActive: Bool =
+        UserDefaults.standard.object(forKey: "isActive") as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(self.isActive, forKey: "isActive")
+            NotificationCenter.default.post(name: .activeStateChanged, object: nil)
+        }
     }
 }
 
-class AppState: ObservableObject {
-    static let shared = AppState()
-
-    // Defaults to true on first launch
-    @Published var isActive: Bool =
-        UserDefaults.standard.object(forKey: "isActive") as? Bool ?? true {
-        didSet { UserDefaults.standard.set(self.isActive, forKey: "isActive") }
-    }
+extension Notification.Name {
+    static let activeStateChanged = Notification.Name("activeStateChanged")
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: – Status bar
     var statusItem: NSStatusItem?
-    var cancellable: AnyCancellable?
 
     // MARK: – Cursor containment
     var lastTime: TimeInterval = 0
@@ -38,20 +32,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusBar()
         setupMenuTracking()
         setupEventMonitor()
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(activeStateChanged),
+            name: .activeStateChanged,
+            object: nil
+        )
     }
 
-    // MARK: – Status bar setup
+    // MARK: – Status bar
 
     private func setupStatusBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         updateStatusIcon()
+        rebuildMenu()
+    }
 
-        // Rebuild the menu each time isActive changes
-        cancellable = AppState.shared.$isActive.sink { [weak self] _ in
-            self?.updateStatusIcon()
-            self?.rebuildMenu()
-        }
-
+    @objc private func activeStateChanged() {
+        updateStatusIcon()
         rebuildMenu()
     }
 
@@ -68,16 +67,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func rebuildMenu() {
         let menu = NSMenu()
 
-        let statusTitle = AppState.shared.isActive ? "Containment: On" : "Containment: Off"
-        let statusItem = NSMenuItem(title: statusTitle, action: nil, keyEquivalent: "")
-        statusItem.isEnabled = false
-        menu.addItem(statusItem)
+        let statusLabel = NSMenuItem(
+            title: AppState.shared.isActive ? "Containment: On" : "Containment: Off",
+            action: nil,
+            keyEquivalent: ""
+        )
+        statusLabel.isEnabled = false
+        menu.addItem(statusLabel)
 
         menu.addItem(.separator())
 
-        let toggleTitle = AppState.shared.isActive ? "Disable Containment" : "Enable Containment"
         menu.addItem(NSMenuItem(
-            title: toggleTitle,
+            title: AppState.shared.isActive ? "Disable Containment" : "Enable Containment",
             action: #selector(toggleContainment),
             keyEquivalent: ""
         ))
@@ -90,10 +91,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             keyEquivalent: "q"
         ))
 
-        // Set target on items that need it
         for item in menu.items { item.target = self }
-
-        self.statusItem?.menu = menu
+        statusItem?.menu = menu
     }
 
     @objc private func toggleContainment() {
@@ -104,7 +103,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.terminate(nil)
     }
 
-    // MARK: – Menu tracking (pause containment while menu is open)
+    // MARK: – Menu tracking
 
     private func setupMenuTracking() {
         NotificationCenter.default.addObserver(
@@ -135,25 +134,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard AppState.shared.isActive else { return }
             guard !self.isMenuTracking else { return }
 
-            // Discard stale/replayed events
             if self.lastTime != 0, event.timestamp <= self.lastTime {
                 self.resetDeltas()
                 return
             }
 
-            // Bail cleanly during display configuration changes
             guard let screen = NSScreen.main else { return }
 
             let deltaX = event.deltaX - self.lastDeltaX
             let deltaY = event.deltaY - self.lastDeltaY
             let pos = event.locationInWindow.flipped(in: screen)
 
-            // Clamp to full screen bounds with a 1-point inset
             let bounds = screen.frame
             let xPoint = clamp(pos.x + deltaX, minValue: bounds.minX + 1, maxValue: bounds.maxX - 1)
             let yPoint = clamp(pos.y + deltaY, minValue: bounds.minY + 1, maxValue: bounds.maxY - 1)
 
-            // Reset accumulated delta when the cursor hits a wall so edges don't feel sticky
             self.lastDeltaX = (xPoint == pos.x + deltaX) ? xPoint - pos.x : 0
             self.lastDeltaY = (yPoint == pos.y + deltaY) ? yPoint - pos.y : 0
 
@@ -169,13 +164,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-public func clamp<T: Comparable>(_ value: T, minValue: T, maxValue: T) -> T {
+func clamp<T: Comparable>(_ value: T, minValue: T, maxValue: T) -> T {
     return min(max(value, minValue), maxValue)
 }
 
 extension NSPoint {
     func flipped(in screen: NSScreen) -> NSPoint {
-        let y = screen.frame.size.height - self.y
-        return NSPoint(x: self.x, y: y)
+        NSPoint(x: self.x, y: screen.frame.size.height - self.y)
     }
 }
