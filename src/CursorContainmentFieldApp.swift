@@ -11,6 +11,7 @@ struct CursorContainmentFieldApp: App {
         } label: {
             Image(systemName: appState.isActive ? "lock.fill" : "lock.open.fill")
         }
+        .menuBarExtraStyle(.menu)
     }
 }
 
@@ -73,9 +74,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let deltaY = event.deltaY - self.lastDeltaY
             let pos = event.locationInWindow.flipped(in: screen)
 
+            // Leave the menu bar area completely free so the cursor reaches
+            // the icon without resistance. menuBarHeight is derived from the
+            // live screen geometry — correct on all display sizes and notch Macs.
+            let menuBarHeight = screen.frame.maxY - screen.visibleFrame.maxY
+            if pos.y <= menuBarHeight {
+                self.resetDeltas()
+                return
+            }
+
             let bounds = screen.frame
             let xPoint = clamp(pos.x + deltaX, minValue: bounds.minX + 1, maxValue: bounds.maxX - 1)
-            let yPoint = clamp(pos.y + deltaY, minValue: bounds.minY + 1, maxValue: bounds.maxY - 1)
+            let yPoint = clamp(pos.y + deltaY, minValue: menuBarHeight + 1, maxValue: bounds.maxY - 1)
 
             self.lastDeltaX = (xPoint == pos.x + deltaX) ? xPoint - pos.x : 0
             self.lastDeltaY = (yPoint == pos.y + deltaY) ? yPoint - pos.y : 0
