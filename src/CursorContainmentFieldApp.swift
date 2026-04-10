@@ -1,27 +1,29 @@
-import AppKit
-import Combine
+import SwiftUI
 
-class AppState {
-    static let shared = AppState()
+@main
+struct CursorContainmentFieldApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @StateObject var appState = AppState.shared
 
-    var isActive: Bool =
-        UserDefaults.standard.object(forKey: "isActive") as? Bool ?? true {
-        didSet {
-            UserDefaults.standard.set(self.isActive, forKey: "isActive")
-            NotificationCenter.default.post(name: .activeStateChanged, object: nil)
+    var body: some Scene {
+        MenuBarExtra {
+            MenuBarView(appState: appState)
+        } label: {
+            Image(systemName: appState.isActive ? "lock.fill" : "lock.open.fill")
         }
     }
 }
 
-extension Notification.Name {
-    static let activeStateChanged = Notification.Name("activeStateChanged")
+class AppState: ObservableObject {
+    static let shared = AppState()
+
+    @Published var isActive: Bool =
+        UserDefaults.standard.object(forKey: "isActive") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(self.isActive, forKey: "isActive") }
+    }
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
-    // MARK: – Status bar
-    var statusItem: NSStatusItem?
-
-    // MARK: – Cursor containment
     var lastTime: TimeInterval = 0
     var lastDeltaX: CGFloat = 0
     var lastDeltaY: CGFloat = 0
@@ -29,81 +31,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var isMenuTracking = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        setupStatusBar()
         setupMenuTracking()
         setupEventMonitor()
-
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(activeStateChanged),
-            name: .activeStateChanged,
-            object: nil
-        )
     }
-
-    // MARK: – Status bar
-
-    private func setupStatusBar() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        updateStatusIcon()
-        rebuildMenu()
-    }
-
-    @objc private func activeStateChanged() {
-        updateStatusIcon()
-        rebuildMenu()
-    }
-
-    private func updateStatusIcon() {
-        let name = AppState.shared.isActive
-            ? "lock.rectangle.fill"
-            : "lock.open.rectangle.fill"
-        statusItem?.button?.image = NSImage(
-            systemSymbolName: name,
-            accessibilityDescription: "CursorContainmentField"
-        )
-    }
-
-    private func rebuildMenu() {
-        let menu = NSMenu()
-
-        let statusLabel = NSMenuItem(
-            title: AppState.shared.isActive ? "Containment: On" : "Containment: Off",
-            action: nil,
-            keyEquivalent: ""
-        )
-        statusLabel.isEnabled = false
-        menu.addItem(statusLabel)
-
-        menu.addItem(.separator())
-
-        menu.addItem(NSMenuItem(
-            title: AppState.shared.isActive ? "Disable Containment" : "Enable Containment",
-            action: #selector(toggleContainment),
-            keyEquivalent: ""
-        ))
-
-        menu.addItem(.separator())
-
-        menu.addItem(NSMenuItem(
-            title: "Quit CursorContainmentField",
-            action: #selector(quitApp),
-            keyEquivalent: "q"
-        ))
-
-        for item in menu.items { item.target = self }
-        statusItem?.menu = menu
-    }
-
-    @objc private func toggleContainment() {
-        AppState.shared.isActive.toggle()
-    }
-
-    @objc private func quitApp() {
-        NSApplication.shared.terminate(nil)
-    }
-
-    // MARK: – Menu tracking
 
     private func setupMenuTracking() {
         NotificationCenter.default.addObserver(
@@ -123,8 +53,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.resetDeltas()
         }
     }
-
-    // MARK: – Event monitor
 
     private func setupEventMonitor() {
         eventMonitor = NSEvent.addGlobalMonitorForEvents(
@@ -165,7 +93,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 func clamp<T: Comparable>(_ value: T, minValue: T, maxValue: T) -> T {
-    return min(max(value, minValue), maxValue)
+    min(max(value, minValue), maxValue)
 }
 
 extension NSPoint {
