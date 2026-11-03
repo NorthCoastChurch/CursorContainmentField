@@ -1,4 +1,5 @@
 import SwiftUI
+import os
 
 @main
 struct CursorContainmentFieldApp: App {
@@ -28,7 +29,25 @@ class AppState: ObservableObject {
 
     // Bundle IDs of apps that should auto-trigger containment.
     @Published var triggerApps: [String] {
-        didSet { UserDefaults.standard.set(triggerApps, forKey: "triggerApps") }
+        didSet {
+            UserDefaults.standard.set(triggerApps, forKey: "triggerApps")
+            applyTriggerChange(from: oldValue)
+        }
+    }
+
+    // Treat a running app being added as a launch and a running app being
+    // removed as a quit, so edits take effect without relaunching anything.
+    private func applyTriggerChange(from oldValue: [String]) {
+        let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+        let added = triggerApps.filter { !oldValue.contains($0) }
+        let removed = oldValue.filter { !triggerApps.contains($0) }
+
+        if added.contains(where: running.contains) {
+            isActive = true
+        } else if removed.contains(where: running.contains),
+                  !triggerApps.contains(where: running.contains) {
+            isActive = false
+        }
     }
 
     init() {
@@ -38,6 +57,8 @@ class AppState: ObservableObject {
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var containmentTimer: Timer?
+    private var warpFailing = false
+    private let logger = Logger(subsystem: "com.church.CursorContainmentField", category: "containment")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupContainmentTimer()
@@ -48,9 +69,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         containmentTimer = Timer.scheduledTimer(
             withTimeInterval: 1.0 / 60.0,
             repeats: true
-        ) { _ in
+        ) { [weak self] _ in
             guard AppState.shared.isActive else { return }
-            guard let screen = NSScreen.main else { return }
+            // The primary display (the one whose origin is 0,0). NSScreen.main
+            // is the screen with the key window, which can be a secondary display.
+            guard let screen = NSScreen.screens.first else { return }
 
             let loc = NSEvent.mouseLocation
             let x = loc.x
@@ -58,23 +81,37 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             let menuBarH = screen.frame.maxY - screen.visibleFrame.maxY
 
-            // Cursor escaped above the screen — snap back into the menu bar strip.
+            let cx = clamp(x, minValue: 0.0, maxValue: screen.frame.width - 1.0)
+
+            // Cursor escaped above the screen — snap back to the top row so the
+            // menu bar (including an auto-hidden one) stays reachable.
             if y < 0 {
-                let cx = clamp(x, minValue: 1.0, maxValue: screen.frame.width - 1.0)
-                CGWarpMouseCursorPosition(CGPoint(x: cx, y: 1.0))
+                self?.warp(to: CGPoint(x: cx, y: 0.0))
                 return
             }
 
-            // Leave the menu bar strip free so the icon stays reachable.
-            guard y > menuBarH else { return }
-
-            let cx = clamp(x, minValue: 1.0, maxValue: screen.frame.width - 1.0)
-            let cy = clamp(y, minValue: menuBarH, maxValue: screen.frame.height - 1.0)
+            // Inside the menu bar strip only the horizontal edges are enforced,
+            // so the menu bar stays reachable without leaking onto side displays.
+            let cy = y <= menuBarH
+                ? y
+                : clamp(y, minValue: menuBarH, maxValue: screen.frame.height - 1.0)
 
             if cx != x || cy != y {
-                CGWarpMouseCursorPosition(CGPoint(x: cx, y: cy))
+                self?.warp(to: CGPoint(x: cx, y: cy))
             }
         }
+    }
+
+    // CGWarpMouseCursorPosition fails silently from the user's point of view,
+    // so log the first failure (and recovery) to make an OS-level block visible.
+    private func warp(to point: CGPoint) {
+        let err = CGWarpMouseCursorPosition(point)
+        if err != .success && !warpFailing {
+            logger.error("CGWarpMouseCursorPosition failed: \(err.rawValue, privacy: .public)")
+        } else if err == .success && warpFailing {
+            logger.notice("CGWarpMouseCursorPosition recovered")
+        }
+        warpFailing = err != .success
     }
 
     private func setupAppMonitoring() {
